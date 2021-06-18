@@ -42,7 +42,7 @@ mx = heightFrame - heightMinge
 nx = widthFrame - widthMinge
 
 
-video = cv2.VideoWriter(video_name, 0, fpsVideo, (widthFrame, heightFrame))
+# video = cv2.VideoWriter(video_name, 0, fpsVideo, (widthFrame, heightFrame))
 
 # for image in images:
 #     video.write(cv2.imread(os.path.join(image_folder, image)))
@@ -58,49 +58,54 @@ localTest = [images[0]]
 
 prg = cl.Program(ctx, """
 __kernel void calculateMSE(
-    __global const float *a_g, 
-    __global const float *b_g, 
-     int b_m, 
-     int b_n, 
+    __global const float *frameData, 
+    __global const float *roiData, 
+     int roiHeight, 
+     int roiWidth, 
      int m,
      int n, 
-    __global float *res_g)
+    __global float *resData)
 {
-  int gid = get_global_id(0);
-  int gidI = gid / b_m;
-  int gidJ = gid % b_m;
-  printf("a:%d ", *a_g); 
-        int sum = 0;
-        for (int i = gidI; i < gidI + b_m; i++) {
-          for (int j = gidJ; j < gidJ + b_n; j++) {
-             int dif = a_g[(i*b_m)+j] - b_g[(i-gidI)*b_m+j-gidJ];
-             sum += dif*dif;
-          }
+    int gid = get_global_id(0);
+    int gidI = gid / roiHeight;
+    int gidJ = gid % roiHeight;
+    printf("a:%d ", *frameData); 
+    int sum = 0;
+    for (int i = gidI; i < gidI + roiHeight; i++) {
+        for (int j = gidJ; j < gidJ + roiWidth; j++) {
+            int dif = frameData[(i*roiHeight)+j] - roiData[(i-gidI)*roiHeight+j-gidJ];
+            sum += dif*dif;
         }
-   
-   res_g[gid] = sum/(b_m*b_n);
-   printf("res:%d ", res_g[gid]); 
+    }
+    resData[gid] = sum/(roiHeight*roiWidth);
+    printf("res:%d ", resData[gid]); 
 }
 """).build()
 #TODO fix the data transmition
 for image in localTest:
     print(roiMingeImageData)
     print(type(frame.ravel()))
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=frame.ravel())
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=roiMingeImageData)
+    frameData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=frame.ravel())
+    roiData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=roiMingeImageData)
     # b_m = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(heightMinge))
     # b_n = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(widthMinge))
     # m = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(mx))
     # n = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(nx))
 
     dim = mx * nx
-    print(dim)
-    res_g = cl.Buffer(ctx, mf.WRITE_ONLY, dim)
+    resData = cl.Buffer(ctx, mf.WRITE_ONLY, dim)
     knl = prg.calculateMSE  # Use this Kernel object for repeated calls
-    knl(queue, (dim, 1), None, a_g, b_g, np.int32(heightMinge), np.int32(widthMinge), np.int32(mx), np.int32(nx), res_g)
+
+    #convert data
+    heightData32 = np.int32(heightMinge)
+    widthData32 = np.int32(widthMinge)
+    mData32 = np.int32(mx)
+    nData32 = np.int32(nx)
+
+    knl(queue, (dim, 1), None, frameData, roiData, heightData32, widthData32, mData32, nData32, resData)
 
     res_np = np.empty_like(dim)
-    cl.enqueue_copy(queue, res_np, res_g)
+    cl.enqueue_copy(queue, res_np, resData)
 
 print(res_np)
 #
