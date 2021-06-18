@@ -27,21 +27,15 @@ fpsVideo = 25
 images = [img for img in os.listdir(image_folder) if img.endswith(".jpg")]
 images = natsorted(images)
 
-roiMingeFolderLocation = 'roi/cana_mica_extra_rau.jpg'
+roiMingeFolderLocation = 'roi/cana.jpg'
 roiCanaFolderLocation = 'roi/cana.jpg'
 
-roiMingeImageData = cv2.imread(roiMingeFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.uint8)
-heightMinge, widthMinge= roiMingeImageData.shape
 roiCanaImageData = cv2.imread(roiCanaFolderLocation).astype(np.uint8)
 heightCana, widthCana, layersCana = roiCanaImageData.shape
 
-frame = cv2.imread('roi/cana_mica_rau.jpg', cv2.IMREAD_GRAYSCALE).astype(np.uint8)
-heightFrame, widthFrame = frame.shape
-
-mx = heightFrame - heightMinge
-nx = widthFrame - widthMinge
-
-
+globalFrame = cv2.imread('frames/fotbal/frame0.jpg', cv2.IMREAD_GRAYSCALE).astype(np.uint8)
+globalheightFrame, globalwidthFrame = globalFrame.shape
+print(globalheightFrame, globalwidthFrame)
 # video = cv2.VideoWriter(video_name, 0, fpsVideo, (widthFrame, heightFrame))
 
 # for image in images:
@@ -76,29 +70,28 @@ __kernel void calculateMSE(
         for (int j = gidJ; j < gidJ + roiWidth; j++) {
             int dif = frameData[(i*m)+j] - roiData[(i-gidI)*roiHeight+j-gidJ];
             sum += dif*dif;
-            if (gid == 0) {
-                 printf (" (%d, %d) ", frameData[(i*m)+j], roiData[(i-gidI)*roiHeight+j-gidJ]);
-                printf (" dif: %d ", dif);
-            }
         }
     }
-    if (gid == 0) {
-        printf (" sum: %d ", sum);
-    }
+
     resData[gid] = (float)sum/(roiHeight*roiWidth);
 }
 """).build()
-#TODO fix the data transmition
-for image in localTest:
-    # print(roiMingeImageData)
-    frameData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=frame)
-    roiData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=roiMingeImageData)
-    # b_m = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(heightMinge))
-    # b_n = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(widthMinge))
-    # m = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(mx))
-    # n = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(nx))
+#TODO made if to choose between cup and ball
+stackResult = []
+for image in images:
+    roiMingeImageData = cv2.imread(roiMingeFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.uint8)
+    heightMinge, widthMinge = roiMingeImageData.shape
+    currentFrameFolderLocation = os.path.join(image_folder, image)
+    currentFrame = cv2.imread(currentFrameFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.uint8)
+    heightFrame, widthFrame = currentFrame.shape
 
-    dim = 6 * 6
+    mx = heightFrame - heightMinge
+    nx = widthFrame - widthMinge
+
+    frameData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=currentFrame)
+    roiData = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=roiMingeImageData)
+
+    dim = mx * nx
     fakeVector = np.zeros(dim).astype(np.float32)
     resData = cl.Buffer(ctx, mf.WRITE_ONLY, fakeVector.nbytes)
     knl = prg.calculateMSE  # Use this Kernel object for repeated calls
@@ -113,27 +106,49 @@ for image in localTest:
 
     res_np = np.empty_like(fakeVector)
     cl.enqueue_copy(queue, res_np, resData)
+    stackResult.append(res_np)
 
 
+def getMSEMin(stackResult):
+    array = []
+    for arr in stackResult:
+        min = arr[0]
+        for (index, mse) in enumerate(arr):
+            local = mse
+            if local < min:
+                min = local
+                i = index
+        array.append((min, i))
+    return array
+
+
+def getCoordinates(index, frameHeight, frameWidth):
+    x = index / frameHeight
+    y = index % frameWidth
+    return (round(x), round(y))
+
+minArray = getMSEMin(stackResult)
+for tuple in minArray:
+    print(getCoordinates(tuple[1], globalheightFrame, globalwidthFrame))
+# for testing
 # Check on CPU with Numpy:
-#print(res_np)
-for image in localTest:
-    cpuArray = []
-    frame = cv2.imread('roi/cana_mica_rau.jpg', cv2.IMREAD_GRAYSCALE).astype(np.int16)
-    heightFrame, widthFrame = frame.shape
-    #print(frame)
-    roiMingeImageData = cv2.imread(roiMingeFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.int16)
-    heightMinge, widthMinge = roiMingeImageData.shape
-    for i in range(0, mx+1):
-        for j in range(0, nx+1):
-            localM1 = frame[i:i+widthMinge, j:j+heightMinge]
-            diff = localM1 - roiMingeImageData
-            # mse = getMSE(localM1, roiMingeImageData)
-            localSum = np.sum(np.square(diff))
-            cpuArray.append(localSum/(heightMinge*widthMinge))
-
-print(res_np)
-print(cpuArray)
-print(res_np - cpuArray)
-print(np.linalg.norm(res_np - cpuArray))
+# for image in localTest:
+#     cpuArray = []
+#     frame = cv2.imread('roi/cana_mica_rau.jpg', cv2.IMREAD_GRAYSCALE).astype(np.int16)
+#     heightFrame, widthFrame = frame.shape
+#     #print(frame)
+#     roiMingeImageData = cv2.imread(roiMingeFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.int16)
+#     heightMinge, widthMinge = roiMingeImageData.shape
+#     for i in range(0, mx+1):
+#         for j in range(0, nx+1):
+#             localM1 = frame[i:i+widthMinge, j:j+heightMinge]
+#             diff = localM1 - roiMingeImageData
+#             # mse = getMSE(localM1, roiMingeImageData)
+#             localSum = np.sum(np.square(diff))
+#             cpuArray.append(localSum/(heightMinge*widthMinge))
+#
+# print(res_np)
+# print(cpuArray)
+# print(res_np - cpuArray)
+# print(np.linalg.norm(res_np - cpuArray))
 # assert np.allclose(res_np, cpuArray)
