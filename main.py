@@ -36,6 +36,8 @@ heightCana, widthCana, layersCana = roiCanaImageData.shape
 globalFrame = cv2.imread('frames/fotbal/frame0.jpg', cv2.IMREAD_GRAYSCALE).astype(np.uint8)
 globalheightFrame, globalwidthFrame = globalFrame.shape
 print(globalheightFrame, globalwidthFrame)
+
+
 # video = cv2.VideoWriter(video_name, 0, fpsVideo, (widthFrame, heightFrame))
 
 # for image in images:
@@ -72,7 +74,6 @@ __kernel void calculateMSE(
             sum += dif*dif;
         }
     }
-
     resData[gid] = (float)sum/(roiHeight*roiWidth);
 }
 """).build()
@@ -130,6 +131,8 @@ def getCoordinates(index, frameHeight, frameWidth):
 minArray = getMSEMin(stackResult)
 for tuple in minArray:
     print(getCoordinates(tuple[1], globalheightFrame, globalwidthFrame))
+
+
 # for testing
 # Check on CPU with Numpy:
 # for image in localTest:
