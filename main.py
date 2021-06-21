@@ -106,7 +106,7 @@ if any(os.scandir('./removed_channels/' + dataset_name)):
 
     cv2.imwrite("./roi/minge_red.jpg", roiImageData)
 
-
+# main block of code where ro read the current frame and call the kernel
 for image in images:
     currentFrameFolderLocation = os.path.join(image_folder, image)
     currentFrame = cv2.imread(currentFrameFolderLocation, cv2.IMREAD_GRAYSCALE).astype(np.uint8)
@@ -136,7 +136,7 @@ for image in images:
     cl.enqueue_copy(queue, res_np, resData)
     stackResult.append(res_np)
 
-
+# function to get the min of the mse/mad returned from gpu
 def getMSEMin(stackResult):
     array = []
     for arr in stackResult:
@@ -149,8 +149,6 @@ def getMSEMin(stackResult):
                 i = index
         array.append((min, i))
     return array
-
-
 
 def getCoordinates(index, frameHeight, frameWidth):
     x = index / frameHeight
